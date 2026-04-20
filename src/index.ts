@@ -11,51 +11,60 @@ import { publicRouter } from './routes/public';
 const PORT = Number(process.env.PORT ?? 4000);
 const MONGODB_URI = process.env.MONGODB_URI;
 const WEB_ORIGIN = process.env.WEB_ORIGIN ?? 'http://localhost:5173';
+const WEB_ORIGINS = (process.env.WEB_ORIGINS ?? '')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+const WEB_ORIGIN_REGEX = process.env.WEB_ORIGIN_REGEX;
 
-const app = express();
-
-app.use(
-  cors({
-    origin: WEB_ORIGIN,
-    credentials: true,
-  }),
-);
-app.use(express.json());
-
-async function ensureDbConnection() {
-  if (!MONGODB_URI) {
-    throw new Error('Missing MONGODB_URI in environment');
-  }
-
-  if (mongoose.connection.readyState === 1) {
-    return;
-  }
-
-  await mongoose.connect(MONGODB_URI);
+if (!MONGODB_URI) {
+  throw new Error('Missing MONGODB_URI in environment');
 }
+const MONGODB_URI_REQUIRED: string = MONGODB_URI;
+const ALLOWED_ORIGINS = new Set(WEB_ORIGINS.length > 0 ? WEB_ORIGINS : [WEB_ORIGIN]);
+const ALLOWED_ORIGIN_REGEX = WEB_ORIGIN_REGEX ? new RegExp(WEB_ORIGIN_REGEX) : null;
 
-app.use(async (_req, _res, next) => {
-  try {
-    await ensureDbConnection();
-    next();
-  } catch (err) {
-    next(err);
-  }
-});
+async function main() {
+  await mongoose.connect(MONGODB_URI_REQUIRED);
 
-app.get('/health', (_req, res) => res.json({ ok: true }));
+  const app = express();
+  app.use(
+    cors({
+      origin(origin, callback) {
+        // Allow non-browser clients (curl/Postman/server-to-server) with no Origin header.
+        if (!origin) return callback(null, true);
 
-app.use('/auth', authRouter);
-app.use('/me', meRouter);
-app.use('/event-types', eventTypesRouter);
-app.use('/public', publicRouter);
+        if (ALLOWED_ORIGINS.has(origin)) {
+          return callback(null, true);
+        }
 
-if (!process.env.VERCEL) {
+        if (ALLOWED_ORIGIN_REGEX?.test(origin)) {
+          return callback(null, true);
+        }
+
+        return callback(new Error(`CORS blocked for origin: ${origin}`));
+      },
+      credentials: true,
+    }),
+  );
+  app.use(express.json());
+
+  app.get('/health', (_req, res) => res.json({ ok: true }));
+
+  app.use('/auth', authRouter);
+  app.use('/me', meRouter);
+  app.use('/event-types', eventTypesRouter);
+  app.use('/public', publicRouter);
+
   app.listen(PORT, () => {
     // eslint-disable-next-line no-console
     console.log(`API listening on http://localhost:${PORT}`);
   });
 }
 
-export default app;
+main().catch((err) => {
+  // eslint-disable-next-line no-console
+  console.error(err);
+  process.exit(1);
+});
 
