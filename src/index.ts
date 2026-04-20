@@ -49,7 +49,7 @@ async function main() {
   );
   app.use(express.json());
 
-  app.get('/health', (_req, res) => res.json({ ok: true }));
+  app.get('/', (_req, res) => res.json({ ok: true }));
 
   app.use('/auth', authRouter);
   app.use('/me', meRouter);
