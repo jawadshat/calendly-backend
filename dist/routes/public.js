@@ -10,9 +10,12 @@ const Availability_1 = require("../models/Availability");
 const Booking_1 = require("../models/Booking");
 const slots_1 = require("../lib/slots");
 const mailer_1 = require("../lib/mailer");
+const jwt_1 = require("../lib/jwt");
+const errors_1 = require("../middleware/errors");
+const googleCalendar_1 = require("../lib/googleCalendar");
 exports.publicRouter = (0, express_1.Router)();
 const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-exports.publicRouter.get('/users/:username/event-types', async (req, res) => {
+exports.publicRouter.get('/users/:username/event-types', (0, errors_1.asyncHandler)(async (req, res) => {
     const user = await User_1.UserModel.findOne({ username: new RegExp(`^${esc(req.params.username)}$`, 'i') })
         .select('_id username displayName timezone email')
         .lean();
@@ -22,8 +25,8 @@ exports.publicRouter.get('/users/:username/event-types', async (req, res) => {
         .select('slug title description durationMinutes locationType')
         .lean();
     return res.json({ user, items });
-});
-exports.publicRouter.get('/users/:username/event-types/:slug/slots', async (req, res) => {
+}));
+exports.publicRouter.get('/users/:username/event-types/:slug/slots', (0, errors_1.asyncHandler)(async (req, res) => {
     const schema = zod_1.z.object({
         startUtcISO: zod_1.z.string().min(1),
         endUtcISO: zod_1.z.string().min(1),
@@ -69,6 +72,16 @@ exports.publicRouter.get('/users/:username/event-types/:slug/slots', async (req,
         .lean();
     const booked = new Set(bookings.map((b) => `${new Date(b.startUtc).toISOString()}_${new Date(b.endUtc).toISOString()}`));
     const slots = allSlots.filter((s) => !booked.has(`${new Date(s.startUtcISO).toISOString()}_${new Date(s.endUtcISO).toISOString()}`));
+    const busyRanges = await (0, googleCalendar_1.getBusyRanges)(String(user._id), parsed.data.startUtcISO, clampedEnd);
+    const slotsWithoutGoogleBusy = slots.filter((slot) => {
+        const slotStart = luxon_1.DateTime.fromISO(slot.startUtcISO, { zone: 'utc' }).toMillis();
+        const slotEnd = luxon_1.DateTime.fromISO(slot.endUtcISO, { zone: 'utc' }).toMillis();
+        return !busyRanges.some((busy) => {
+            const busyStart = luxon_1.DateTime.fromISO(String(busy.start), { zone: 'utc' }).toMillis();
+            const busyEnd = luxon_1.DateTime.fromISO(String(busy.end), { zone: 'utc' }).toMillis();
+            return slotStart < busyEnd && slotEnd > busyStart;
+        });
+    });
     return res.json({
         user: { username: user.username, displayName: user.displayName, timezone: user.timezone },
         eventType: {
@@ -78,10 +91,10 @@ exports.publicRouter.get('/users/:username/event-types/:slug/slots', async (req,
             durationMinutes: eventType.durationMinutes,
             locationType: eventType.locationType,
         },
-        slots,
+        slots: slotsWithoutGoogleBusy,
     });
-});
-exports.publicRouter.post('/users/:username/event-types/:slug/book', async (req, res) => {
+}));
+exports.publicRouter.post('/users/:username/event-types/:slug/book', (0, errors_1.asyncHandler)(async (req, res) => {
     const schema = zod_1.z.object({
         inviteeName: zod_1.z.string().min(2).max(120),
         inviteeEmail: zod_1.z.string().email(),
@@ -97,6 +110,20 @@ exports.publicRouter.post('/users/:username/event-types/:slug/book', async (req,
         .lean();
     if (!user)
         return res.status(404).json({ error: 'User not found' });
+    // Public link should be open for everyone, but host cannot book their own event.
+    const authHeader = req.header('authorization');
+    if (authHeader?.startsWith('Bearer ')) {
+        try {
+            const token = authHeader.slice('Bearer '.length);
+            const payload = (0, jwt_1.verifyAccessToken)(token);
+            if (payload.sub === String(user._id)) {
+                return res.status(403).json({ error: 'You cannot book your own event link' });
+            }
+        }
+        catch {
+            // Ignore invalid token here so anonymous/public flow still works.
+        }
+    }
     const eventType = await EventType_1.EventTypeModel.findOne({
         userId: user._id,
         slug: new RegExp(`^${esc(req.params.slug)}$`, 'i'),
@@ -161,6 +188,23 @@ exports.publicRouter.post('/users/:username/event-types/:slug/book', async (req,
             // eslint-disable-next-line no-console
             console.error('Booking email delivery failed:', emailErr);
         }
+        try {
+            const event = await (0, googleCalendar_1.createGoogleCalendarEvent)({
+                userId: String(user._id),
+                summary: eventType.title,
+                description: `Booked by ${parsed.data.inviteeName} (${parsed.data.inviteeEmail})`,
+                startUtcISO: new Date(booking.startUtc).toISOString(),
+                endUtcISO: new Date(booking.endUtc).toISOString(),
+                inviteeEmail: parsed.data.inviteeEmail,
+            });
+            if (event?.id) {
+                await Booking_1.BookingModel.findByIdAndUpdate(booking._id, { $set: { googleCalendarEventId: event.id } });
+            }
+        }
+        catch (gcalErr) {
+            // eslint-disable-next-line no-console
+            console.error('Google Calendar event creation failed:', gcalErr);
+        }
         return res.status(201).json({
             booking: {
                 id: String(booking._id),
@@ -173,7 +217,12 @@ exports.publicRouter.post('/users/:username/event-types/:slug/book', async (req,
             },
         });
     }
-    catch {
-        return res.status(409).json({ error: 'This time was just booked. Pick another slot.' });
+    catch (err) {
+        if (err?.code === 11000) {
+            return res.status(409).json({ error: 'This time was just booked. Pick another slot.' });
+        }
+        // eslint-disable-next-line no-console
+        console.error('Booking create failed:', err);
+        return res.status(500).json({ error: 'Could not complete booking. Please try again.' });
     }
-});
+}));

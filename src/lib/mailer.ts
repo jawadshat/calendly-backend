@@ -21,6 +21,10 @@ function logDevEmail(params: { to: string; subject: string; text: string }) {
   console.log('=== DEV EMAIL PREVIEW END ===\n');
 }
 
+function isValidEmail(value: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
 function emailHtml(params: { heading: string; line1: string; line2: string; line3: string }) {
   return `
   <div style="font-family:Arial,sans-serif;background:#f6f8ff;padding:24px;">
@@ -50,79 +54,96 @@ export async function sendBookingEmails(params: {
   hostTimezone: string;
   inviteeTimezone: string;
 }) {
-  const startUtc = DateTime.fromISO(params.startUtcISO, { zone: 'utc' });
-  const endUtc = DateTime.fromISO(params.endUtcISO, { zone: 'utc' });
+  try {
+    const startUtc = DateTime.fromISO(params.startUtcISO, { zone: 'utc' });
+    const endUtc = DateTime.fromISO(params.endUtcISO, { zone: 'utc' });
+    if (!startUtc.isValid || !endUtc.isValid) {
+      // eslint-disable-next-line no-console
+      console.warn('Skipping booking emails due to invalid booking date values');
+      return;
+    }
 
-  const hostStart = startUtc.setZone(params.hostTimezone);
-  const hostEnd = endUtc.setZone(params.hostTimezone);
-  const inviteeStart = startUtc.setZone(params.inviteeTimezone);
-  const inviteeEnd = endUtc.setZone(params.inviteeTimezone);
+    if (!isValidEmail(params.inviteeEmail) || !isValidEmail(params.hostEmail)) {
+      // eslint-disable-next-line no-console
+      console.warn('Skipping booking emails due to invalid recipient email');
+      return;
+    }
 
-  const hostLine = `${hostStart.toFormat('cccc, LLL d, yyyy • h:mm a')} - ${hostEnd.toFormat('h:mm a')} (${params.hostTimezone})`;
-  const inviteeLine = `${inviteeStart.toFormat('cccc, LLL d, yyyy • h:mm a')} - ${inviteeEnd.toFormat('h:mm a')} (${params.inviteeTimezone})`;
+    const hostStart = startUtc.setZone(params.hostTimezone);
+    const hostEnd = endUtc.setZone(params.hostTimezone);
+    const inviteeStart = startUtc.setZone(params.inviteeTimezone);
+    const inviteeEnd = endUtc.setZone(params.inviteeTimezone);
 
-  const subject = `Meeting scheduled: ${params.eventTitle}`;
+    const hostLine = `${hostStart.toFormat('cccc, LLL d, yyyy • h:mm a')} - ${hostEnd.toFormat('h:mm a')} (${params.hostTimezone})`;
+    const inviteeLine = `${inviteeStart.toFormat('cccc, LLL d, yyyy • h:mm a')} - ${inviteeEnd.toFormat('h:mm a')} (${params.inviteeTimezone})`;
 
-  const hostText =
-    `Hi ${params.hostName},\n\n` +
-    `A new meeting has been scheduled.\n\n` +
-    `Event: ${params.eventTitle}\n` +
-    `Invitee: ${params.inviteeName} (${params.inviteeEmail})\n` +
-    `Time: ${hostLine}\n\n` +
-    `Thanks,\nCalendly Clone`;
+    const subject = `Meeting scheduled: ${params.eventTitle}`;
 
-  const inviteeText =
-    `Hi ${params.inviteeName},\n\n` +
-    `Your meeting has been scheduled.\n\n` +
-    `Event: ${params.eventTitle}\n` +
-    `Host: ${params.hostName} (${params.hostEmail})\n` +
-    `Time: ${inviteeLine}\n\n` +
-    `Thanks,\nCalendly Clone`;
+    const hostText =
+      `Hi ${params.hostName},\n\n` +
+      `A new meeting has been scheduled.\n\n` +
+      `Event: ${params.eventTitle}\n` +
+      `Invitee: ${params.inviteeName} (${params.inviteeEmail})\n` +
+      `Time: ${hostLine}\n\n` +
+      `Thanks,\nCalendly Clone`;
 
-  const hostHtml = emailHtml({
-    heading: 'New meeting scheduled',
-    line1: `Hi ${params.hostName},`,
-    line2: `Invitee: ${params.inviteeName} (${params.inviteeEmail})`,
-    line3: `Time: ${hostLine}`,
-  });
-  const inviteeHtml = emailHtml({
-    heading: 'Your meeting is confirmed',
-    line1: `Hi ${params.inviteeName},`,
-    line2: `Host: ${params.hostName} (${params.hostEmail})`,
-    line3: `Time: ${inviteeLine}`,
-  });
+    const inviteeText =
+      `Hi ${params.inviteeName},\n\n` +
+      `Your meeting has been scheduled.\n\n` +
+      `Event: ${params.eventTitle}\n` +
+      `Host: ${params.hostName} (${params.hostEmail})\n` +
+      `Time: ${inviteeLine}\n\n` +
+      `Thanks,\nCalendly Clone`;
 
-  if (!canSendEmail()) {
-    logDevEmail({ to: params.hostEmail, subject, text: hostText });
-    logDevEmail({ to: params.inviteeEmail, subject, text: inviteeText });
-    return;
-  }
-
-  async function sendViaResend(to: string, text: string, html: string) {
-    const response = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${RESEND_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        from: EMAIL_FROM,
-        to: [to],
-        subject,
-        text,
-        html,
-      }),
+    const hostHtml = emailHtml({
+      heading: 'New meeting scheduled',
+      line1: `Hi ${params.hostName},`,
+      line2: `Invitee: ${params.inviteeName} (${params.inviteeEmail})`,
+      line3: `Time: ${hostLine}`,
+    });
+    const inviteeHtml = emailHtml({
+      heading: 'Your meeting is confirmed',
+      line1: `Hi ${params.inviteeName},`,
+      line2: `Host: ${params.hostName} (${params.hostEmail})`,
+      line3: `Time: ${inviteeLine}`,
     });
 
-    if (!response.ok) {
-      const body = await response.text();
-      throw new Error(`Resend email failed: ${response.status} ${body}`);
+    if (!canSendEmail()) {
+      logDevEmail({ to: params.hostEmail, subject, text: hostText });
+      logDevEmail({ to: params.inviteeEmail, subject, text: inviteeText });
+      return;
     }
-  }
 
-  await Promise.all([
-    sendViaResend(params.hostEmail, hostText, hostHtml),
-    sendViaResend(params.inviteeEmail, inviteeText, inviteeHtml),
-  ]);
+    async function sendViaResend(to: string, text: string, html: string) {
+      const response = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${RESEND_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          from: EMAIL_FROM,
+          to: [to],
+          subject,
+          text,
+          html,
+        }),
+      });
+
+      if (!response.ok) {
+        const body = await response.text();
+        throw new Error(`Resend email failed: ${response.status} ${body}`);
+      }
+    }
+
+    await Promise.all([
+      sendViaResend(params.hostEmail, hostText, hostHtml),
+      sendViaResend(params.inviteeEmail, inviteeText, inviteeHtml),
+    ]);
+  } catch (err) {
+    // Email delivery must never crash API responses.
+    // eslint-disable-next-line no-console
+    console.error('sendBookingEmails failed:', err);
+  }
 }
 

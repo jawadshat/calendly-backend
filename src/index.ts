@@ -7,6 +7,7 @@ import { authRouter } from './routes/auth';
 import { meRouter } from './routes/me';
 import { eventTypesRouter } from './routes/eventTypes';
 import { publicRouter } from './routes/public';
+import { errorHandler, notFoundHandler } from './middleware/errors';
 
 const PORT = Number(process.env.PORT ?? 4000);
 const MONGODB_URI = process.env.MONGODB_URI;
@@ -26,6 +27,8 @@ const ALLOWED_ORIGIN_REGEX = WEB_ORIGIN_REGEX ? new RegExp(WEB_ORIGIN_REGEX) : n
 
 async function main() {
   await mongoose.connect(MONGODB_URI_REQUIRED);
+  // eslint-disable-next-line no-console
+  console.log('Connected to MongoDB');
 
   const app = express();
   app.use(
@@ -56,6 +59,9 @@ async function main() {
   app.use('/event-types', eventTypesRouter);
   app.use('/public', publicRouter);
 
+  app.use(notFoundHandler);
+  app.use(errorHandler);
+
   app.listen(PORT, () => {
     // eslint-disable-next-line no-console
     console.log(`API listening on http://localhost:${PORT}`);
@@ -64,7 +70,16 @@ async function main() {
 
 main().catch((err) => {
   // eslint-disable-next-line no-console
-  console.error(err);
-  process.exit(1);
+  console.error('[BOOT ERROR]', err);
+});
+
+process.on('unhandledRejection', (reason) => {
+  // eslint-disable-next-line no-console
+  console.error('[UNHANDLED REJECTION]', reason);
+});
+
+process.on('uncaughtException', (err) => {
+  // eslint-disable-next-line no-console
+  console.error('[UNCAUGHT EXCEPTION]', err);
 });
 

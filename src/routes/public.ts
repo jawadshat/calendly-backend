@@ -7,11 +7,13 @@ import { AvailabilityModel } from '../models/Availability';
 import { BookingModel } from '../models/Booking';
 import { generateWeeklySlots } from '../lib/slots';
 import { sendBookingEmails } from '../lib/mailer';
+import { asyncHandler } from '../middleware/errors';
+import { verifyAccessToken } from '../lib/jwt';
 
 export const publicRouter = Router();
 const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-publicRouter.get('/users/:username/event-types', async (req, res) => {
+publicRouter.get('/users/:username/event-types', asyncHandler(async (req, res) => {
   const user = await UserModel.findOne({ username: new RegExp(`^${esc(req.params.username)}$`, 'i') })
     .select('_id username displayName timezone email')
     .lean();
@@ -20,9 +22,9 @@ publicRouter.get('/users/:username/event-types', async (req, res) => {
     .select('slug title description durationMinutes locationType')
     .lean();
   return res.json({ user, items });
-});
+}));
 
-publicRouter.get('/users/:username/event-types/:slug/slots', async (req, res) => {
+publicRouter.get('/users/:username/event-types/:slug/slots', asyncHandler(async (req, res) => {
   const schema = z.object({
     startUtcISO: z.string().min(1),
     endUtcISO: z.string().min(1),
@@ -82,9 +84,9 @@ publicRouter.get('/users/:username/event-types/:slug/slots', async (req, res) =>
     },
     slots,
   });
-});
+}));
 
-publicRouter.post('/users/:username/event-types/:slug/book', async (req, res) => {
+publicRouter.post('/users/:username/event-types/:slug/book', asyncHandler(async (req, res) => {
   const schema = z.object({
     inviteeName: z.string().min(2).max(120),
     inviteeEmail: z.string().email(),
@@ -99,6 +101,21 @@ publicRouter.post('/users/:username/event-types/:slug/book', async (req, res) =>
     .select('_id username displayName timezone email')
     .lean();
   if (!user) return res.status(404).json({ error: 'User not found' });
+
+  // Public link should be open for everyone, but host cannot book their own event.
+  const authHeader = req.header('authorization');
+  if (authHeader?.startsWith('Bearer ')) {
+    try {
+      const token = authHeader.slice('Bearer '.length);
+      const payload = verifyAccessToken(token);
+      if (payload.sub === String((user as any)._id)) {
+        return res.status(403).json({ error: 'You cannot book your own event link' });
+      }
+    } catch {
+      // Ignore invalid token here so anonymous/public flow still works.
+    }
+  }
+
   const eventType = await EventTypeModel.findOne({
     userId: user._id,
     slug: new RegExp(`^${esc(req.params.slug)}$`, 'i'),
@@ -166,6 +183,8 @@ publicRouter.post('/users/:username/event-types/:slug/book', async (req, res) =>
       console.error('Booking email delivery failed:', emailErr);
     }
 
+ 
+
     return res.status(201).json({
       booking: {
         id: String((booking as any)._id),
@@ -177,8 +196,13 @@ publicRouter.post('/users/:username/event-types/:slug/book', async (req, res) =>
         inviteeEmail: booking.inviteeEmail,
       },
     });
-  } catch {
-    return res.status(409).json({ error: 'This time was just booked. Pick another slot.' });
+  } catch (err: any) {
+    if (err?.code === 11000) {
+      return res.status(409).json({ error: 'This time was just booked. Pick another slot.' });
+    }
+    // eslint-disable-next-line no-console
+    console.error('Booking create failed:', err);
+    return res.status(500).json({ error: 'Could not complete booking. Please try again.' });
   }
-});
+}));
 

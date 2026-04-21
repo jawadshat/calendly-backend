@@ -10,8 +10,9 @@ const zod_1 = require("zod");
 const User_1 = require("../models/User");
 const Availability_1 = require("../models/Availability");
 const jwt_1 = require("../lib/jwt");
+const errors_1 = require("../middleware/errors");
 exports.authRouter = (0, express_1.Router)();
-exports.authRouter.post('/register', async (req, res) => {
+exports.authRouter.post('/register', (0, errors_1.asyncHandler)(async (req, res) => {
     const schema = zod_1.z.object({
         email: zod_1.z.string().email(),
         password: zod_1.z.string().min(8),
@@ -33,8 +34,8 @@ exports.authRouter.post('/register', async (req, res) => {
     await Availability_1.AvailabilityModel.create({ userId: user._id, timezone, weekly: [] });
     const token = (0, jwt_1.signAccessToken)({ sub: String(user._id) });
     return res.json({ token });
-});
-exports.authRouter.post('/login', async (req, res) => {
+}));
+exports.authRouter.post('/login', (0, errors_1.asyncHandler)(async (req, res) => {
     const schema = zod_1.z.object({
         email: zod_1.z.string().email(),
         password: zod_1.z.string().min(1),
@@ -52,4 +53,4 @@ exports.authRouter.post('/login', async (req, res) => {
         return res.status(401).json({ error: 'Invalid credentials' });
     const token = (0, jwt_1.signAccessToken)({ sub: String(user._id) });
     return res.json({ token });
-});
+}));

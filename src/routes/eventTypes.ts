@@ -2,16 +2,17 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { requireAuth, type AuthedRequest } from '../middleware/auth';
 import { EventTypeModel } from '../models/EventType';
+import { asyncHandler } from '../middleware/errors';
 
 export const eventTypesRouter = Router();
 
-eventTypesRouter.get('/', requireAuth, async (req, res) => {
+eventTypesRouter.get('/', requireAuth, asyncHandler(async (req, res) => {
   const userId = (req as AuthedRequest).userId;
   const items = await EventTypeModel.find({ userId }).sort({ createdAt: -1 }).lean();
   return res.json({ items });
-});
+}));
 
-eventTypesRouter.post('/', requireAuth, async (req, res) => {
+eventTypesRouter.post('/', requireAuth, asyncHandler(async (req, res) => {
   const userId = (req as AuthedRequest).userId;
   const schema = z.object({
     slug: z.string().min(2).max(64).regex(/^[a-zA-Z0-9_-]+$/),
@@ -30,9 +31,9 @@ eventTypesRouter.post('/', requireAuth, async (req, res) => {
     slug: parsed.data.slug.trim().toLowerCase(),
   });
   return res.status(201).json({ item: created });
-});
+}));
 
-eventTypesRouter.put('/:id', requireAuth, async (req, res) => {
+eventTypesRouter.put('/:id', requireAuth, asyncHandler(async (req, res) => {
   const userId = (req as AuthedRequest).userId;
   const schema = z.object({
     slug: z.string().min(2).max(64).regex(/^[a-zA-Z0-9_-]+$/).optional(),
@@ -57,12 +58,12 @@ eventTypesRouter.put('/:id', requireAuth, async (req, res) => {
   ).lean();
   if (!updated) return res.status(404).json({ error: 'Not found' });
   return res.json({ item: updated });
-});
+}));
 
-eventTypesRouter.delete('/:id', requireAuth, async (req, res) => {
+eventTypesRouter.delete('/:id', requireAuth, asyncHandler(async (req, res) => {
   const userId = (req as AuthedRequest).userId;
   const deleted = await EventTypeModel.findOneAndDelete({ _id: req.params.id, userId }).lean();
   if (!deleted) return res.status(404).json({ error: 'Not found' });
   return res.json({ ok: true });
-});
+}));
 

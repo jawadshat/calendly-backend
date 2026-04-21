@@ -45,6 +45,7 @@ const BookingSchema = new mongoose_1.Schema({
     timezone: { type: String, required: true, default: 'UTC' },
     status: { type: String, enum: ['confirmed', 'cancelled'], default: 'confirmed' },
     cancelReason: { type: String },
+    googleCalendarEventId: { type: String },
 }, { timestamps: true });
 // Prevent double-booking overlapping slots per user
 BookingSchema.index({ userId: 1, startUtc: 1, endUtc: 1 }, { unique: true });

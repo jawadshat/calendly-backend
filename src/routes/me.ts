@@ -4,17 +4,18 @@ import { UserModel } from '../models/User';
 import { AvailabilityModel } from '../models/Availability';
 import { z } from 'zod';
 import { BookingModel } from '../models/Booking';
+import { asyncHandler } from '../middleware/errors';
 
 export const meRouter = Router();
 
-meRouter.get('/', requireAuth, async (req, res) => {
+meRouter.get('/', requireAuth, asyncHandler(async (req, res) => {
   const userId = (req as AuthedRequest).userId;
   const user = await UserModel.findById(userId).select('email username displayName timezone').lean();
   const availability = await AvailabilityModel.findOne({ userId }).lean();
   return res.json({ user, availability });
-});
+}));  
 
-meRouter.put('/availability', requireAuth, async (req, res) => {
+meRouter.put('/availability', requireAuth, asyncHandler(async (req, res) => {
   const userId = (req as AuthedRequest).userId;
   const schema = z.object({
     timezone: z.string().min(1),
@@ -53,14 +54,14 @@ meRouter.put('/availability', requireAuth, async (req, res) => {
   ).lean();
 
   return res.json({ availability: updated });
-});
+}));
 
-meRouter.get('/bookings', requireAuth, async (req, res) => {
+meRouter.get('/bookings', requireAuth, asyncHandler(async (req, res) => {
   const userId = (req as AuthedRequest).userId;
   const items = await BookingModel.find({ userId, status: 'confirmed' })
     .sort({ startUtc: 1 })
     .limit(200)
     .lean();
   return res.json({ items });
-});
+}));
 

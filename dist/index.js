@@ -11,26 +11,49 @@ const auth_1 = require("./routes/auth");
 const me_1 = require("./routes/me");
 const eventTypes_1 = require("./routes/eventTypes");
 const public_1 = require("./routes/public");
+const errors_1 = require("./middleware/errors");
 const PORT = Number(process.env.PORT ?? 4000);
 const MONGODB_URI = process.env.MONGODB_URI;
 const WEB_ORIGIN = process.env.WEB_ORIGIN ?? 'http://localhost:5173';
+const WEB_ORIGINS = (process.env.WEB_ORIGINS ?? '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+const WEB_ORIGIN_REGEX = process.env.WEB_ORIGIN_REGEX;
 if (!MONGODB_URI) {
     throw new Error('Missing MONGODB_URI in environment');
 }
 const MONGODB_URI_REQUIRED = MONGODB_URI;
+const ALLOWED_ORIGINS = new Set(WEB_ORIGINS.length > 0 ? WEB_ORIGINS : [WEB_ORIGIN]);
+const ALLOWED_ORIGIN_REGEX = WEB_ORIGIN_REGEX ? new RegExp(WEB_ORIGIN_REGEX) : null;
 async function main() {
     await mongoose_1.default.connect(MONGODB_URI_REQUIRED);
+    // eslint-disable-next-line no-console
+    console.log('Connected to MongoDB');
     const app = (0, express_1.default)();
     app.use((0, cors_1.default)({
-        origin: WEB_ORIGIN,
+        origin(origin, callback) {
+            // Allow non-browser clients (curl/Postman/server-to-server) with no Origin header.
+            if (!origin)
+                return callback(null, true);
+            if (ALLOWED_ORIGINS.has(origin)) {
+                return callback(null, true);
+            }
+            if (ALLOWED_ORIGIN_REGEX?.test(origin)) {
+                return callback(null, true);
+            }
+            return callback(new Error(`CORS blocked for origin: ${origin}`));
+        },
         credentials: true,
     }));
     app.use(express_1.default.json());
-    app.get('/health', (_req, res) => res.json({ ok: true }));
+    app.get('/', (_req, res) => res.json({ ok: true }));
     app.use('/auth', auth_1.authRouter);
     app.use('/me', me_1.meRouter);
     app.use('/event-types', eventTypes_1.eventTypesRouter);
     app.use('/public', public_1.publicRouter);
+    app.use(errors_1.notFoundHandler);
+    app.use(errors_1.errorHandler);
     app.listen(PORT, () => {
         // eslint-disable-next-line no-console
         console.log(`API listening on http://localhost:${PORT}`);
@@ -38,6 +61,13 @@ async function main() {
 }
 main().catch((err) => {
     // eslint-disable-next-line no-console
-    console.error(err);
-    process.exit(1);
+    console.error('[BOOT ERROR]', err);
+});
+process.on('unhandledRejection', (reason) => {
+    // eslint-disable-next-line no-console
+    console.error('[UNHANDLED REJECTION]', reason);
+});
+process.on('uncaughtException', (err) => {
+    // eslint-disable-next-line no-console
+    console.error('[UNCAUGHT EXCEPTION]', err);
 });

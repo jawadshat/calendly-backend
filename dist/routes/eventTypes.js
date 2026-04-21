@@ -5,13 +5,14 @@ const express_1 = require("express");
 const zod_1 = require("zod");
 const auth_1 = require("../middleware/auth");
 const EventType_1 = require("../models/EventType");
+const errors_1 = require("../middleware/errors");
 exports.eventTypesRouter = (0, express_1.Router)();
-exports.eventTypesRouter.get('/', auth_1.requireAuth, async (req, res) => {
+exports.eventTypesRouter.get('/', auth_1.requireAuth, (0, errors_1.asyncHandler)(async (req, res) => {
     const userId = req.userId;
     const items = await EventType_1.EventTypeModel.find({ userId }).sort({ createdAt: -1 }).lean();
     return res.json({ items });
-});
-exports.eventTypesRouter.post('/', auth_1.requireAuth, async (req, res) => {
+}));
+exports.eventTypesRouter.post('/', auth_1.requireAuth, (0, errors_1.asyncHandler)(async (req, res) => {
     const userId = req.userId;
     const schema = zod_1.z.object({
         slug: zod_1.z.string().min(2).max(64).regex(/^[a-zA-Z0-9_-]+$/),
@@ -30,8 +31,8 @@ exports.eventTypesRouter.post('/', auth_1.requireAuth, async (req, res) => {
         slug: parsed.data.slug.trim().toLowerCase(),
     });
     return res.status(201).json({ item: created });
-});
-exports.eventTypesRouter.put('/:id', auth_1.requireAuth, async (req, res) => {
+}));
+exports.eventTypesRouter.put('/:id', auth_1.requireAuth, (0, errors_1.asyncHandler)(async (req, res) => {
     const userId = req.userId;
     const schema = zod_1.z.object({
         slug: zod_1.z.string().min(2).max(64).regex(/^[a-zA-Z0-9_-]+$/).optional(),
@@ -52,11 +53,11 @@ exports.eventTypesRouter.put('/:id', auth_1.requireAuth, async (req, res) => {
     if (!updated)
         return res.status(404).json({ error: 'Not found' });
     return res.json({ item: updated });
-});
-exports.eventTypesRouter.delete('/:id', auth_1.requireAuth, async (req, res) => {
+}));
+exports.eventTypesRouter.delete('/:id', auth_1.requireAuth, (0, errors_1.asyncHandler)(async (req, res) => {
     const userId = req.userId;
     const deleted = await EventType_1.EventTypeModel.findOneAndDelete({ _id: req.params.id, userId }).lean();
     if (!deleted)
         return res.status(404).json({ error: 'Not found' });
     return res.json({ ok: true });
-});
+}));

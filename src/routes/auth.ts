@@ -4,10 +4,11 @@ import { z } from 'zod';
 import { UserModel } from '../models/User';
 import { AvailabilityModel } from '../models/Availability';
 import { signAccessToken } from '../lib/jwt';
+import { asyncHandler } from '../middleware/errors';
 
 export const authRouter = Router();
 
-authRouter.post('/register', async (req, res) => {
+authRouter.post('/register', asyncHandler(async (req, res) => {
   const schema = z.object({
     email: z.string().email(),
     password: z.string().min(8),
@@ -31,9 +32,9 @@ authRouter.post('/register', async (req, res) => {
 
   const token = signAccessToken({ sub: String(user._id) });
   return res.json({ token });
-});
+}));
 
-authRouter.post('/login', async (req, res) => {
+authRouter.post('/login', asyncHandler(async (req, res) => {
   const schema = z.object({
     email: z.string().email(),
     password: z.string().min(1),
@@ -51,5 +52,5 @@ authRouter.post('/login', async (req, res) => {
 
   const token = signAccessToken({ sub: String((user as any)._id) });
   return res.json({ token });
-});
+}));
 
