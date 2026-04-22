@@ -42,7 +42,9 @@ publicRouter.get('/users/:username/event-types/:slug/slots', async (req, res) =>
   }).lean();
   if (!eventType) return res.status(404).json({ error: 'Event type not found' });
 
-  const availability = await AvailabilityModel.findOne({ userId: user._id }).lean();
+  const availability =
+    (await AvailabilityModel.findOne({ userId: user._id, eventTypeId: (eventType as any)._id }).lean()) ??
+    (await AvailabilityModel.findOne({ userId: user._id, eventTypeId: { $exists: false } }).lean());
   if (!availability) return res.json({ slots: [] });
 
   const maxEnd = DateTime.utc().plus({ days: availability.maxDaysInFuture }).toISO()!;
@@ -123,7 +125,9 @@ publicRouter.post('/users/:username/event-types/:slug/book', async (req, res) =>
   }).lean();
   if (!eventType) return res.status(404).json({ error: 'Event type not found' });
 
-  const availability = await AvailabilityModel.findOne({ userId: user._id }).lean();
+  const availability =
+    (await AvailabilityModel.findOne({ userId: user._id, eventTypeId: (eventType as any)._id }).lean()) ??
+    (await AvailabilityModel.findOne({ userId: user._id, eventTypeId: { $exists: false } }).lean());
   if (!availability) return res.status(400).json({ error: 'Host has no availability configured' });
 
   // Validate requested slot is actually available (regenerate slots for that day range)

@@ -10,11 +10,10 @@ const Availability_1 = require("../models/Availability");
 const Booking_1 = require("../models/Booking");
 const slots_1 = require("../lib/slots");
 const mailer_1 = require("../lib/mailer");
-const errors_1 = require("../middleware/errors");
 const jwt_1 = require("../lib/jwt");
 exports.publicRouter = (0, express_1.Router)();
 const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-exports.publicRouter.get('/users/:username/event-types', (0, errors_1.asyncHandler)(async (req, res) => {
+exports.publicRouter.get('/users/:username/event-types', async (req, res) => {
     const user = await User_1.UserModel.findOne({ username: new RegExp(`^${esc(req.params.username)}$`, 'i') })
         .select('_id username displayName timezone email')
         .lean();
@@ -24,8 +23,8 @@ exports.publicRouter.get('/users/:username/event-types', (0, errors_1.asyncHandl
         .select('slug title description durationMinutes locationType')
         .lean();
     return res.json({ user, items });
-}));
-exports.publicRouter.get('/users/:username/event-types/:slug/slots', (0, errors_1.asyncHandler)(async (req, res) => {
+});
+exports.publicRouter.get('/users/:username/event-types/:slug/slots', async (req, res) => {
     const schema = zod_1.z.object({
         startUtcISO: zod_1.z.string().min(1),
         endUtcISO: zod_1.z.string().min(1),
@@ -83,8 +82,8 @@ exports.publicRouter.get('/users/:username/event-types/:slug/slots', (0, errors_
         },
         slots,
     });
-}));
-exports.publicRouter.post('/users/:username/event-types/:slug/book', (0, errors_1.asyncHandler)(async (req, res) => {
+});
+exports.publicRouter.post('/users/:username/event-types/:slug/book', async (req, res) => {
     const schema = zod_1.z.object({
         inviteeName: zod_1.z.string().min(2).max(120),
         inviteeEmail: zod_1.z.string().email(),
@@ -107,11 +106,12 @@ exports.publicRouter.post('/users/:username/event-types/:slug/book', (0, errors_
             const token = authHeader.slice('Bearer '.length);
             const payload = (0, jwt_1.verifyAccessToken)(token);
             if (payload.sub === String(user._id)) {
-                return res.status(403).json({ error: 'You cannot book your own event link' });
+                return res.status(403).json({ error: 'You cannot book your own meetings slot' });
             }
         }
         catch {
-            // Ignore invalid token here so anonymous/public flow still works.
+            const err = new Error('Invalid access token');
+            return res.status(401).json({ error: err.message });
         }
     }
     const eventType = await EventType_1.EventTypeModel.findOne({
@@ -191,12 +191,7 @@ exports.publicRouter.post('/users/:username/event-types/:slug/book', (0, errors_
             },
         });
     }
-    catch (err) {
-        if (err?.code === 11000) {
-            return res.status(409).json({ error: 'This time was just booked. Pick another slot.' });
-        }
-        // eslint-disable-next-line no-console
-        console.error('Booking create failed:', err);
-        return res.status(500).json({ error: 'Could not complete booking. Please try again.' });
+    catch {
+        return res.status(409).json({ error: 'This time was just booked. Pick another slot.' });
     }
-}));
+});
