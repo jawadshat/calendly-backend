@@ -5,18 +5,32 @@ import { AvailabilityModel } from '../models/Availability';
 import { z } from 'zod';
 import { BookingModel } from '../models/Booking';
 import { asyncHandler } from '../middleware/errors';
+import { EventTypeModel } from '../models/EventType';
 
 export const meRouter = Router();
 
 meRouter.get('/', requireAuth, asyncHandler(async (req, res) => {
   const userId = (req as AuthedRequest).userId;
   const user = await UserModel.findById(userId).select('email username displayName timezone').lean();
-  const availability = await AvailabilityModel.findOne({ userId }).lean();
-  return res.json({ user, availability });
+  const eventTypes = await EventTypeModel.find({ userId }).select('_id').lean();
+  const eventTypeIds = eventTypes.map((et) => et._id);
+  const availabilities = await AvailabilityModel.find({ userId, eventTypeId: { $in: eventTypeIds } }).lean();
+  const legacyAvailability = await AvailabilityModel.findOne({ userId, eventTypeId: { $exists: false } }).lean();
+
+  const availabilityByEventType = Object.fromEntries(
+    availabilities.map((a) => [String(a.eventTypeId), a]),
+  );
+
+  return res.json({
+    user,
+    availability: legacyAvailability,
+    availabilityByEventType,
+  });
 }));  
 
 meRouter.put('/availability', requireAuth, asyncHandler(async (req, res) => {
   const userId = (req as AuthedRequest).userId;
+  const eventTypeId = typeof req.query.eventTypeId === 'string' ? req.query.eventTypeId : undefined;
   const schema = z.object({
     timezone: z.string().min(1),
     weekly: z
@@ -47,9 +61,19 @@ meRouter.put('/availability', requireAuth, asyncHandler(async (req, res) => {
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
+  const query: Record<string, any> = { userId };
+  if (eventTypeId) {
+    const eventType = await EventTypeModel.findOne({ _id: eventTypeId, userId }).select('_id').lean();
+    if (!eventType) return res.status(404).json({ error: 'Event type not found' });
+    query.eventTypeId = eventType._id;
+  } else {
+    // Backward-compatible user-level availability document.
+    query.eventTypeId = { $exists: false };
+  }
+
   const updated = await AvailabilityModel.findOneAndUpdate(
-    { userId },
-    { $set: parsed.data },
+    query,
+    { $set: { ...parsed.data, ...(eventTypeId ? { eventTypeId } : {}) } },
     { new: true, upsert: true },
   ).lean();
 

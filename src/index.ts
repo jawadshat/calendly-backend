@@ -8,6 +8,7 @@ import { meRouter } from './routes/me';
 import { eventTypesRouter } from './routes/eventTypes';
 import { publicRouter } from './routes/public';
 import { errorHandler, notFoundHandler } from './middleware/errors';
+import { AvailabilityModel } from './models/Availability';
 
 const PORT = Number(process.env.PORT ?? 4000);
 const MONGODB_URI = process.env.MONGODB_URI;
@@ -25,10 +26,38 @@ const MONGODB_URI_REQUIRED: string = MONGODB_URI;
 const ALLOWED_ORIGINS = new Set(WEB_ORIGINS.length > 0 ? WEB_ORIGINS : [WEB_ORIGIN]);
 const ALLOWED_ORIGIN_REGEX = WEB_ORIGIN_REGEX ? new RegExp(WEB_ORIGIN_REGEX) : null;
 
+async function migrateAvailabilityIndexes() {
+  const collection = AvailabilityModel.collection;
+  const indexes = await collection.indexes();
+  const legacyUniqueUserIdIndexes = indexes.filter(
+    (idx) => idx.name !== '_id_' && idx.unique === true && idx.key?.userId === 1,
+  );
+
+  for (const idx of legacyUniqueUserIdIndexes) {
+    if (!idx.name) continue;
+    // eslint-disable-next-line no-console
+    console.log(`Dropping legacy unique Availability.userId index: ${idx.name}`);
+    await collection.dropIndex(idx.name);
+  }
+
+  const legacyEventTypeIdIndex = indexes.find(
+    (idx) => idx.name === 'eventTypeId_1' && idx.key?.eventTypeId === 1 && !idx.unique,
+  );
+  if (legacyEventTypeIdIndex?.name) {
+    // eslint-disable-next-line no-console
+    console.log(`Dropping conflicting Availability index: ${legacyEventTypeIdIndex.name}`);
+    await collection.dropIndex(legacyEventTypeIdIndex.name);
+  }
+
+  // Ensure current schema indexes exist (including unique partial index on eventTypeId).
+  await AvailabilityModel.syncIndexes();
+}
+
 async function main() {
   await mongoose.connect(MONGODB_URI_REQUIRED);
   // eslint-disable-next-line no-console
   console.log('Connected to MongoDB');
+  await migrateAvailabilityIndexes();
 
   const app = express();
   app.use(

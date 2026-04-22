@@ -12,6 +12,7 @@ const me_1 = require("./routes/me");
 const eventTypes_1 = require("./routes/eventTypes");
 const public_1 = require("./routes/public");
 const errors_1 = require("./middleware/errors");
+const Availability_1 = require("./models/Availability");
 const PORT = Number(process.env.PORT ?? 4000);
 const MONGODB_URI = process.env.MONGODB_URI;
 const WEB_ORIGIN = process.env.WEB_ORIGIN ?? 'http://localhost:5173';
@@ -26,10 +27,31 @@ if (!MONGODB_URI) {
 const MONGODB_URI_REQUIRED = MONGODB_URI;
 const ALLOWED_ORIGINS = new Set(WEB_ORIGINS.length > 0 ? WEB_ORIGINS : [WEB_ORIGIN]);
 const ALLOWED_ORIGIN_REGEX = WEB_ORIGIN_REGEX ? new RegExp(WEB_ORIGIN_REGEX) : null;
+async function migrateAvailabilityIndexes() {
+    const collection = Availability_1.AvailabilityModel.collection;
+    const indexes = await collection.indexes();
+    const legacyUniqueUserIdIndexes = indexes.filter((idx) => idx.name !== '_id_' && idx.unique === true && idx.key?.userId === 1);
+    for (const idx of legacyUniqueUserIdIndexes) {
+        if (!idx.name)
+            continue;
+        // eslint-disable-next-line no-console
+        console.log(`Dropping legacy unique Availability.userId index: ${idx.name}`);
+        await collection.dropIndex(idx.name);
+    }
+    const legacyEventTypeIdIndex = indexes.find((idx) => idx.name === 'eventTypeId_1' && idx.key?.eventTypeId === 1 && !idx.unique);
+    if (legacyEventTypeIdIndex?.name) {
+        // eslint-disable-next-line no-console
+        console.log(`Dropping conflicting Availability index: ${legacyEventTypeIdIndex.name}`);
+        await collection.dropIndex(legacyEventTypeIdIndex.name);
+    }
+    // Ensure current schema indexes exist (including unique partial index on eventTypeId).
+    await Availability_1.AvailabilityModel.syncIndexes();
+}
 async function main() {
     await mongoose_1.default.connect(MONGODB_URI_REQUIRED);
     // eslint-disable-next-line no-console
     console.log('Connected to MongoDB');
+    await migrateAvailabilityIndexes();
     const app = (0, express_1.default)();
     app.use((0, cors_1.default)({
         origin(origin, callback) {

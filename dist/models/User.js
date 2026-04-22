@@ -41,9 +41,5 @@ const UserSchema = new mongoose_1.Schema({
     username: { type: String, required: true, unique: true, trim: true },
     displayName: { type: String, required: true, trim: true },
     timezone: { type: String, required: true, default: 'UTC' },
-    googleCalendarConnected: { type: Boolean, default: false },
-    googleCalendarRefreshToken: { type: String },
-    googleCalendarAccessToken: { type: String },
-    googleCalendarTokenExpiry: { type: Date },
 }, { timestamps: true });
 exports.UserModel = mongoose_1.default.model('User', UserSchema);

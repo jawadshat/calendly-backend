@@ -41,7 +41,8 @@ const WeeklyHoursSchema = new mongoose_1.Schema({
     endMinute: { type: Number, required: true, min: 1, max: 24 * 60 },
 }, { _id: false });
 const AvailabilitySchema = new mongoose_1.Schema({
-    userId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', required: true, unique: true },
+    userId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    eventTypeId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'EventType', required: false },
     timezone: { type: String, required: true, default: 'UTC' },
     weekly: { type: [WeeklyHoursSchema], default: [] },
     bufferBeforeMinutes: { type: Number, default: 0, min: 0, max: 240 },
@@ -49,4 +50,10 @@ const AvailabilitySchema = new mongoose_1.Schema({
     minNoticeMinutes: { type: Number, default: 60, min: 0, max: 7 * 24 * 60 },
     maxDaysInFuture: { type: Number, default: 60, min: 1, max: 365 },
 }, { timestamps: true });
+// One dedicated availability per event type.
+AvailabilitySchema.index({ eventTypeId: 1 }, {
+    name: 'eventTypeId_unique_partial',
+    unique: true,
+    partialFilterExpression: { eventTypeId: { $exists: true } },
+});
 exports.AvailabilityModel = mongoose_1.default.model('Availability', AvailabilitySchema);

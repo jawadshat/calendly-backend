@@ -10,6 +10,7 @@ export type WeeklyHours = {
 
 export type AvailabilityDoc = {
   userId: Types.ObjectId;
+  eventTypeId?: Types.ObjectId;
   timezone: string;
   weekly: WeeklyHours[];
   bufferBeforeMinutes: number;
@@ -29,7 +30,8 @@ const WeeklyHoursSchema = new Schema<WeeklyHours>(
 
 const AvailabilitySchema = new Schema<AvailabilityDoc>(
   {
-    userId: { type: Schema.Types.ObjectId, ref: 'User', required: true, unique: true },
+    userId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    eventTypeId: { type: Schema.Types.ObjectId, ref: 'EventType', required: false },
     timezone: { type: String, required: true, default: 'UTC' },
     weekly: { type: [WeeklyHoursSchema], default: [] },
     bufferBeforeMinutes: { type: Number, default: 0, min: 0, max: 240 },
@@ -38,6 +40,16 @@ const AvailabilitySchema = new Schema<AvailabilityDoc>(
     maxDaysInFuture: { type: Number, default: 60, min: 1, max: 365 },
   },
   { timestamps: true },
+);
+
+// One dedicated availability per event type.
+AvailabilitySchema.index(
+  { eventTypeId: 1 },
+  {
+    name: 'eventTypeId_unique_partial',
+    unique: true,
+    partialFilterExpression: { eventTypeId: { $exists: true } },
+  },
 );
 
 export const AvailabilityModel = mongoose.model<AvailabilityDoc>('Availability', AvailabilitySchema);
