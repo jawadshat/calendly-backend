@@ -11,6 +11,7 @@ const Booking_1 = require("../models/Booking");
 const slots_1 = require("../lib/slots");
 const mailer_1 = require("../lib/mailer");
 const jwt_1 = require("../lib/jwt");
+const googleCalendar_1 = require("../lib/googleCalendar");
 exports.publicRouter = (0, express_1.Router)();
 const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 exports.publicRouter.get('/users/:username/event-types', async (req, res) => {
@@ -71,6 +72,37 @@ exports.publicRouter.get('/users/:username/event-types/:slug/slots', async (req,
         .lean();
     const booked = new Set(bookings.map((b) => `${new Date(b.startUtc).toISOString()}_${new Date(b.endUtc).toISOString()}`));
     const slots = allSlots.filter((s) => !booked.has(`${new Date(s.startUtcISO).toISOString()}_${new Date(s.endUtcISO).toISOString()}`));
+    let finalSlots = slots;
+    if ((0, googleCalendar_1.isGoogleCalendarConfigured)()) {
+        const hostWithGoogle = await User_1.UserModel.findById(user._id)
+            .select('googleCalendar')
+            .lean();
+        const googleCreds = hostWithGoogle?.googleCalendar;
+        if (googleCreds?.refreshToken) {
+            try {
+                const busyRanges = await (0, googleCalendar_1.getGoogleBusyRanges)({
+                    accessToken: googleCreds.accessToken,
+                    refreshToken: googleCreds.refreshToken,
+                    expiryDate: googleCreds.expiryDate,
+                    timeMin: parsed.data.startUtcISO,
+                    timeMax: clampedEnd,
+                });
+                finalSlots = slots.filter((s) => {
+                    const slotStart = luxon_1.DateTime.fromISO(s.startUtcISO, { zone: 'utc' });
+                    const slotEnd = luxon_1.DateTime.fromISO(s.endUtcISO, { zone: 'utc' });
+                    return !busyRanges.some((busy) => {
+                        const busyStart = luxon_1.DateTime.fromISO(busy.start, { zone: 'utc' });
+                        const busyEnd = luxon_1.DateTime.fromISO(busy.end, { zone: 'utc' });
+                        return slotStart < busyEnd && busyStart < slotEnd;
+                    });
+                });
+            }
+            catch (err) {
+                // eslint-disable-next-line no-console
+                console.error('Google Calendar busy-range check failed:', err);
+            }
+        }
+    }
     return res.json({
         user: { username: user.username, displayName: user.displayName, timezone: user.timezone },
         eventType: {
@@ -80,7 +112,7 @@ exports.publicRouter.get('/users/:username/event-types/:slug/slots', async (req,
             durationMinutes: eventType.durationMinutes,
             locationType: eventType.locationType,
         },
-        slots,
+        slots: finalSlots,
     });
 });
 exports.publicRouter.post('/users/:username/event-types/:slug/book', async (req, res) => {
@@ -110,8 +142,7 @@ exports.publicRouter.post('/users/:username/event-types/:slug/book', async (req,
             }
         }
         catch {
-            const err = new Error('Invalid access token');
-            return res.status(401).json({ error: err.message });
+            // Ignore invalid token and continue as public booking flow.
         }
     }
     const eventType = await EventType_1.EventTypeModel.findOne({
@@ -150,6 +181,9 @@ exports.publicRouter.post('/users/:username/event-types/:slug/book', async (req,
     if (!ok)
         return res.status(409).json({ error: 'Slot not available' });
     try {
+        const hostWithGoogle = await User_1.UserModel.findById(user._id)
+            .select('googleCalendar')
+            .lean();
         const booking = await Booking_1.BookingModel.create({
             userId: user._id,
             eventTypeId: eventType._id,
@@ -160,6 +194,27 @@ exports.publicRouter.post('/users/:username/event-types/:slug/book', async (req,
             timezone: parsed.data.inviteeTimezone,
             status: 'confirmed',
         });
+        const googleCreds = hostWithGoogle?.googleCalendar;
+        if ((0, googleCalendar_1.isGoogleCalendarConfigured)() && googleCreds?.refreshToken) {
+            try {
+                await (0, googleCalendar_1.createGoogleCalendarEvent)({
+                    accessToken: googleCreds.accessToken,
+                    refreshToken: googleCreds.refreshToken,
+                    expiryDate: googleCreds.expiryDate,
+                    summary: eventType.title,
+                    description: `${parsed.data.inviteeName} booked via ${user.username}/${eventType.slug}`,
+                    startUtcISO: new Date(booking.startUtc).toISOString(),
+                    endUtcISO: new Date(booking.endUtc).toISOString(),
+                    hostTimezone: user.timezone,
+                    inviteeEmail: parsed.data.inviteeEmail,
+                    inviteeName: parsed.data.inviteeName,
+                });
+            }
+            catch (googleErr) {
+                // eslint-disable-next-line no-console
+                console.error('Google Calendar event creation failed:', googleErr);
+            }
+        }
         // Best-effort email notifications to host + invitee.
         try {
             await (0, mailer_1.sendBookingEmails)({

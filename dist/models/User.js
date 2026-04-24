@@ -41,5 +41,13 @@ const UserSchema = new mongoose_1.Schema({
     username: { type: String, required: true, unique: true, trim: true },
     displayName: { type: String, required: true, trim: true },
     timezone: { type: String, required: true, default: 'UTC' },
+    googleCalendar: {
+        refreshToken: { type: String, required: false },
+        accessToken: { type: String, required: false },
+        expiryDate: { type: Number, required: false },
+        email: { type: String, required: false },
+    },
+    googleOAuthState: { type: String, required: false, index: true },
+    googleOAuthStateExpiresAt: { type: Date, required: false },
 }, { timestamps: true });
 exports.UserModel = mongoose_1.default.model('User', UserSchema);

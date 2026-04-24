@@ -49,9 +49,11 @@ async function sendBookingEmails(params) {
             console.warn('Skipping booking emails due to invalid booking date values');
             return;
         }
-        if (!isValidEmail(params.inviteeEmail) || !isValidEmail(params.hostEmail)) {
+        const hostEmailOk = isValidEmail(params.hostEmail);
+        const inviteeEmailOk = isValidEmail(params.inviteeEmail);
+        if (!hostEmailOk && !inviteeEmailOk) {
             // eslint-disable-next-line no-console
-            console.warn('Skipping booking emails due to invalid recipient email');
+            console.warn('Skipping booking emails due to invalid recipient emails');
             return;
         }
         const hostStart = startUtc.setZone(params.hostTimezone);
@@ -86,8 +88,10 @@ async function sendBookingEmails(params) {
             line3: `Time: ${inviteeLine}`,
         });
         if (!canSendEmail()) {
-            logDevEmail({ to: params.hostEmail, subject, text: hostText });
-            logDevEmail({ to: params.inviteeEmail, subject, text: inviteeText });
+            if (hostEmailOk)
+                logDevEmail({ to: params.hostEmail, subject, text: hostText });
+            if (inviteeEmailOk)
+                logDevEmail({ to: params.inviteeEmail, subject, text: inviteeText });
             return;
         }
         async function sendViaResend(to, text, html) {
@@ -110,10 +114,18 @@ async function sendBookingEmails(params) {
                 throw new Error(`Resend email failed: ${response.status} ${body}`);
             }
         }
-        await Promise.all([
-            sendViaResend(params.hostEmail, hostText, hostHtml),
-            sendViaResend(params.inviteeEmail, inviteeText, inviteeHtml),
-        ]);
+        const deliveries = [];
+        if (hostEmailOk)
+            deliveries.push(sendViaResend(params.hostEmail, hostText, hostHtml));
+        if (inviteeEmailOk)
+            deliveries.push(sendViaResend(params.inviteeEmail, inviteeText, inviteeHtml));
+        const results = await Promise.allSettled(deliveries);
+        for (const r of results) {
+            if (r.status === 'rejected') {
+                // eslint-disable-next-line no-console
+                console.error('Booking email delivery failed:', r.reason);
+            }
+        }
     }
     catch (err) {
         // Email delivery must never crash API responses.

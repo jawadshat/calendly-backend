@@ -63,9 +63,11 @@ export async function sendBookingEmails(params: {
       return;
     }
 
-    if (!isValidEmail(params.inviteeEmail) || !isValidEmail(params.hostEmail)) {
+    const hostEmailOk = isValidEmail(params.hostEmail);
+    const inviteeEmailOk = isValidEmail(params.inviteeEmail);
+    if (!hostEmailOk && !inviteeEmailOk) {
       // eslint-disable-next-line no-console
-      console.warn('Skipping booking emails due to invalid recipient email');
+      console.warn('Skipping booking emails due to invalid recipient emails');
       return;
     }
 
@@ -109,8 +111,8 @@ export async function sendBookingEmails(params: {
     });
 
     if (!canSendEmail()) {
-      logDevEmail({ to: params.hostEmail, subject, text: hostText });
-      logDevEmail({ to: params.inviteeEmail, subject, text: inviteeText });
+      if (hostEmailOk) logDevEmail({ to: params.hostEmail, subject, text: hostText });
+      if (inviteeEmailOk) logDevEmail({ to: params.inviteeEmail, subject, text: inviteeText });
       return;
     }
 
@@ -136,10 +138,17 @@ export async function sendBookingEmails(params: {
       }
     }
 
-    await Promise.all([
-      sendViaResend(params.hostEmail, hostText, hostHtml),
-      sendViaResend(params.inviteeEmail, inviteeText, inviteeHtml),
-    ]);
+    const deliveries: Promise<unknown>[] = [];
+    if (hostEmailOk) deliveries.push(sendViaResend(params.hostEmail, hostText, hostHtml));
+    if (inviteeEmailOk) deliveries.push(sendViaResend(params.inviteeEmail, inviteeText, inviteeHtml));
+
+    const results = await Promise.allSettled(deliveries);
+    for (const r of results) {
+      if (r.status === 'rejected') {
+        // eslint-disable-next-line no-console
+        console.error('Booking email delivery failed:', r.reason);
+      }
+    }
   } catch (err) {
     // Email delivery must never crash API responses.
     // eslint-disable-next-line no-console
