@@ -45,6 +45,10 @@ export function errorHandler(err: unknown, _req: Request, res: Response, _next: 
     return res.status(400).json({ error: err.message });
   }
 
+  if (err instanceof mongoose.Error.CastError) {
+    return res.status(400).json({ error: `Invalid ${err.path}` });
+  }
+
   if (isDuplicateKeyError(err)) {
     const keys = Object.keys(err.keyPattern ?? {});
     const suffix = keys.length > 0 ? `: ${keys.join(', ')}` : '';

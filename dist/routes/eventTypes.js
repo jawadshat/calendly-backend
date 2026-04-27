@@ -10,6 +10,7 @@ const Availability_1 = require("../models/Availability");
 const User_1 = require("../models/User");
 exports.eventTypesRouter = (0, express_1.Router)();
 const isDuplicateKeyError = (err) => err?.code === 11000;
+const objectIdSchema = zod_1.z.string().regex(/^[a-f\d]{24}$/i, 'Invalid id');
 exports.eventTypesRouter.get('/', auth_1.requireAuth, (0, errors_1.asyncHandler)(async (req, res) => {
     const userId = req.userId;
     const items = await EventType_1.EventTypeModel.find({ userId }).sort({ createdAt: -1 }).lean();
@@ -59,6 +60,9 @@ exports.eventTypesRouter.post('/', auth_1.requireAuth, (0, errors_1.asyncHandler
 }));
 exports.eventTypesRouter.put('/:id', auth_1.requireAuth, (0, errors_1.asyncHandler)(async (req, res) => {
     const userId = req.userId;
+    const idParsed = objectIdSchema.safeParse(req.params.id);
+    if (!idParsed.success)
+        return res.status(400).json({ error: idParsed.error.flatten() });
     const schema = zod_1.z.object({
         slug: zod_1.z.string().min(2).max(64).regex(/^[a-zA-Z0-9_-]+$/).optional(),
         title: zod_1.z.string().min(2).max(120).optional(),
@@ -74,14 +78,17 @@ exports.eventTypesRouter.put('/:id', auth_1.requireAuth, (0, errors_1.asyncHandl
         ...parsed.data,
         ...(parsed.data.slug ? { slug: parsed.data.slug.trim().toLowerCase() } : {}),
     };
-    const updated = await EventType_1.EventTypeModel.findOneAndUpdate({ _id: req.params.id, userId }, { $set: updateData }, { new: true }).lean();
+    const updated = await EventType_1.EventTypeModel.findOneAndUpdate({ _id: idParsed.data, userId }, { $set: updateData }, { new: true }).lean();
     if (!updated)
         return res.status(404).json({ error: 'Not found' });
     return res.json({ item: updated });
 }));
 exports.eventTypesRouter.delete('/:id', auth_1.requireAuth, (0, errors_1.asyncHandler)(async (req, res) => {
     const userId = req.userId;
-    const deleted = await EventType_1.EventTypeModel.findOneAndDelete({ _id: req.params.id, userId }).lean();
+    const idParsed = objectIdSchema.safeParse(req.params.id);
+    if (!idParsed.success)
+        return res.status(400).json({ error: idParsed.error.flatten() });
+    const deleted = await EventType_1.EventTypeModel.findOneAndDelete({ _id: idParsed.data, userId }).lean();
     if (!deleted)
         return res.status(404).json({ error: 'Not found' });
     await Availability_1.AvailabilityModel.deleteOne({ userId, eventTypeId: deleted._id });
@@ -89,7 +96,10 @@ exports.eventTypesRouter.delete('/:id', auth_1.requireAuth, (0, errors_1.asyncHa
 }));
 exports.eventTypesRouter.get('/:id/availability', auth_1.requireAuth, (0, errors_1.asyncHandler)(async (req, res) => {
     const userId = req.userId;
-    const eventType = await EventType_1.EventTypeModel.findOne({ _id: req.params.id, userId }).select('_id').lean();
+    const idParsed = objectIdSchema.safeParse(req.params.id);
+    if (!idParsed.success)
+        return res.status(400).json({ error: idParsed.error.flatten() });
+    const eventType = await EventType_1.EventTypeModel.findOne({ _id: idParsed.data, userId }).select('_id').lean();
     if (!eventType)
         return res.status(404).json({ error: 'Event type not found' });
     const availability = await Availability_1.AvailabilityModel.findOne({ userId, eventTypeId: eventType._id }).lean();
@@ -97,7 +107,10 @@ exports.eventTypesRouter.get('/:id/availability', auth_1.requireAuth, (0, errors
 }));
 exports.eventTypesRouter.put('/:id/availability', auth_1.requireAuth, (0, errors_1.asyncHandler)(async (req, res) => {
     const userId = req.userId;
-    const eventType = await EventType_1.EventTypeModel.findOne({ _id: req.params.id, userId }).select('_id').lean();
+    const idParsed = objectIdSchema.safeParse(req.params.id);
+    if (!idParsed.success)
+        return res.status(400).json({ error: idParsed.error.flatten() });
+    const eventType = await EventType_1.EventTypeModel.findOne({ _id: idParsed.data, userId }).select('_id').lean();
     if (!eventType)
         return res.status(404).json({ error: 'Event type not found' });
     const schema = zod_1.z.object({

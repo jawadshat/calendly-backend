@@ -16,7 +16,7 @@ exports.publicRouter = (0, express_1.Router)();
 const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 exports.publicRouter.get('/users/:username/event-types', async (req, res) => {
     const user = await User_1.UserModel.findOne({ username: new RegExp(`^${esc(req.params.username)}$`, 'i') })
-        .select('_id username displayName timezone email')
+        .select('_id username displayName timezone')
         .lean();
     if (!user)
         return res.status(404).json({ error: 'User not found' });
@@ -27,8 +27,26 @@ exports.publicRouter.get('/users/:username/event-types', async (req, res) => {
 });
 exports.publicRouter.get('/users/:username/event-types/:slug/slots', async (req, res) => {
     const schema = zod_1.z.object({
-        startUtcISO: zod_1.z.string().min(1),
-        endUtcISO: zod_1.z.string().min(1),
+        startUtcISO: zod_1.z.string().datetime({ offset: true }),
+        endUtcISO: zod_1.z.string().datetime({ offset: true }),
+    }).superRefine((val, ctx) => {
+        const start = luxon_1.DateTime.fromISO(val.startUtcISO, { zone: 'utc' });
+        const end = luxon_1.DateTime.fromISO(val.endUtcISO, { zone: 'utc' });
+        if (!start.isValid || !end.isValid) {
+            ctx.addIssue({ code: zod_1.z.ZodIssueCode.custom, message: 'Invalid datetime range' });
+            return;
+        }
+        if (end <= start) {
+            ctx.addIssue({ code: zod_1.z.ZodIssueCode.custom, message: 'endUtcISO must be greater than startUtcISO' });
+            return;
+        }
+        const maxWindowDays = 120;
+        if (end.diff(start, 'days').days > maxWindowDays) {
+            ctx.addIssue({
+                code: zod_1.z.ZodIssueCode.custom,
+                message: `Date range too large (max ${maxWindowDays} days)`,
+            });
+        }
     });
     const parsed = schema.safeParse(req.query);
     if (!parsed.success)
@@ -63,15 +81,25 @@ exports.publicRouter.get('/users/:username/event-types/:slug/slots', async (req,
         bufferAfterMinutes: availability.bufferAfterMinutes,
     });
     // remove already booked slots (simple exact-match filtering)
+    const rangeStart = new Date(parsed.data.startUtcISO);
+    const rangeEnd = new Date(clampedEnd);
     const bookings = await Booking_1.BookingModel.find({
         userId: user._id,
         status: 'confirmed',
-        startUtc: { $gte: new Date(parsed.data.startUtcISO), $lte: new Date(clampedEnd) },
+        startUtc: { $lt: rangeEnd },
+        endUtc: { $gt: rangeStart },
     })
         .select('startUtc endUtc')
         .lean();
-    const booked = new Set(bookings.map((b) => `${new Date(b.startUtc).toISOString()}_${new Date(b.endUtc).toISOString()}`));
-    const slots = allSlots.filter((s) => !booked.has(`${new Date(s.startUtcISO).toISOString()}_${new Date(s.endUtcISO).toISOString()}`));
+    const slots = allSlots.filter((s) => {
+        const slotStart = luxon_1.DateTime.fromISO(s.startUtcISO, { zone: 'utc' });
+        const slotEnd = luxon_1.DateTime.fromISO(s.endUtcISO, { zone: 'utc' });
+        return !bookings.some((b) => {
+            const bookingStart = luxon_1.DateTime.fromJSDate(new Date(b.startUtc), { zone: 'utc' });
+            const bookingEnd = luxon_1.DateTime.fromJSDate(new Date(b.endUtc), { zone: 'utc' });
+            return slotStart < bookingEnd && bookingStart < slotEnd;
+        });
+    });
     let finalSlots = slots;
     if ((0, googleCalendar_1.isGoogleCalendarConfigured)()) {
         const hostWithGoogle = await User_1.UserModel.findById(user._id)
@@ -119,8 +147,8 @@ exports.publicRouter.post('/users/:username/event-types/:slug/book', async (req,
     const schema = zod_1.z.object({
         inviteeName: zod_1.z.string().min(2).max(120),
         inviteeEmail: zod_1.z.string().email(),
-        startUtcISO: zod_1.z.string().min(1),
-        endUtcISO: zod_1.z.string().min(1),
+        startUtcISO: zod_1.z.string().datetime({ offset: true }),
+        endUtcISO: zod_1.z.string().datetime({ offset: true }),
         inviteeTimezone: zod_1.z.string().min(1).default('UTC'),
     });
     const parsed = schema.safeParse(req.body);
@@ -180,6 +208,17 @@ exports.publicRouter.post('/users/:username/event-types/:slug/book', async (req,
     const ok = slots.some((s) => `${s.startUtcISO}_${s.endUtcISO}` === wantedKey);
     if (!ok)
         return res.status(409).json({ error: 'Slot not available' });
+    const overlappingBooking = await Booking_1.BookingModel.findOne({
+        userId: user._id,
+        status: 'confirmed',
+        startUtc: { $lt: end.toJSDate() },
+        endUtc: { $gt: start.toJSDate() },
+    })
+        .select('_id')
+        .lean();
+    if (overlappingBooking) {
+        return res.status(409).json({ error: 'This time was just booked. Pick another slot.' });
+    }
     try {
         const hostWithGoogle = await User_1.UserModel.findById(user._id)
             .select('googleCalendar')

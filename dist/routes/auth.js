@@ -31,7 +31,13 @@ exports.authRouter.post('/register', (0, errors_1.asyncHandler)(async (req, res)
         return res.status(409).json({ error: 'Email or username already in use' });
     const passwordHash = await bcryptjs_1.default.hash(password, 10);
     const user = await User_1.UserModel.create({ email, passwordHash, username, displayName, timezone });
-    await Availability_1.AvailabilityModel.create({ userId: user._id, timezone, weekly: [] });
+    try {
+        await Availability_1.AvailabilityModel.create({ userId: user._id, timezone, weekly: [] });
+    }
+    catch (err) {
+        await User_1.UserModel.deleteOne({ _id: user._id });
+        throw err;
+    }
     const token = (0, jwt_1.signAccessToken)({ sub: String(user._id) });
     return res.json({ token });
 }));

@@ -8,6 +8,7 @@ import { meRouter } from './routes/me';
 import { eventTypesRouter } from './routes/eventTypes';
 import { publicRouter } from './routes/public';
 import { errorHandler, notFoundHandler } from './middleware/errors';
+import { createRateLimit } from './middleware/rateLimit';
 import { AvailabilityModel } from './models/Availability';
 
 const PORT = Number(process.env.PORT ?? 4000);
@@ -83,9 +84,13 @@ async function main() {
 
   app.get('/', (_req, res) => res.json({ ok: true }));
 
-  app.use('/auth', authRouter);
+  const authRateLimit = createRateLimit({ windowMs: 60_000, max: 40, keyPrefix: 'auth' });
+  const bookingRateLimit = createRateLimit({ windowMs: 60_000, max: 80, keyPrefix: 'public-book' });
+
+  app.use('/auth', authRateLimit, authRouter);
   app.use('/me', meRouter);
   app.use('/event-types', eventTypesRouter);
+  app.use('/public/users/:username/event-types/:slug/book', bookingRateLimit);
   app.use('/public', publicRouter);
 
   app.use(notFoundHandler);

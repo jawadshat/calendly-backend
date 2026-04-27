@@ -8,6 +8,7 @@ import { UserModel } from '../models/User';
 
 export const eventTypesRouter = Router();
 const isDuplicateKeyError = (err: any) => err?.code === 11000;
+const objectIdSchema = z.string().regex(/^[a-f\d]{24}$/i, 'Invalid id');
 
 eventTypesRouter.get('/', requireAuth, asyncHandler(async (req, res) => {
   const userId = (req as AuthedRequest).userId;
@@ -64,6 +65,8 @@ eventTypesRouter.post('/', requireAuth, asyncHandler(async (req, res) => {
 
 eventTypesRouter.put('/:id', requireAuth, asyncHandler(async (req, res) => {
   const userId = (req as AuthedRequest).userId;
+  const idParsed = objectIdSchema.safeParse(req.params.id);
+  if (!idParsed.success) return res.status(400).json({ error: idParsed.error.flatten() });
   const schema = z.object({
     slug: z.string().min(2).max(64).regex(/^[a-zA-Z0-9_-]+$/).optional(),
     title: z.string().min(2).max(120).optional(),
@@ -81,7 +84,7 @@ eventTypesRouter.put('/:id', requireAuth, asyncHandler(async (req, res) => {
   };
 
   const updated = await EventTypeModel.findOneAndUpdate(
-    { _id: req.params.id, userId },
+    { _id: idParsed.data, userId },
     { $set: updateData },
     { new: true },
   ).lean();
@@ -91,7 +94,9 @@ eventTypesRouter.put('/:id', requireAuth, asyncHandler(async (req, res) => {
 
 eventTypesRouter.delete('/:id', requireAuth, asyncHandler(async (req, res) => {
   const userId = (req as AuthedRequest).userId;
-  const deleted = await EventTypeModel.findOneAndDelete({ _id: req.params.id, userId }).lean();
+  const idParsed = objectIdSchema.safeParse(req.params.id);
+  if (!idParsed.success) return res.status(400).json({ error: idParsed.error.flatten() });
+  const deleted = await EventTypeModel.findOneAndDelete({ _id: idParsed.data, userId }).lean();
   if (!deleted) return res.status(404).json({ error: 'Not found' });
   await AvailabilityModel.deleteOne({ userId, eventTypeId: deleted._id });
   return res.json({ ok: true });
@@ -99,7 +104,9 @@ eventTypesRouter.delete('/:id', requireAuth, asyncHandler(async (req, res) => {
 
 eventTypesRouter.get('/:id/availability', requireAuth, asyncHandler(async (req, res) => {
   const userId = (req as AuthedRequest).userId;
-  const eventType = await EventTypeModel.findOne({ _id: req.params.id, userId }).select('_id').lean();
+  const idParsed = objectIdSchema.safeParse(req.params.id);
+  if (!idParsed.success) return res.status(400).json({ error: idParsed.error.flatten() });
+  const eventType = await EventTypeModel.findOne({ _id: idParsed.data, userId }).select('_id').lean();
   if (!eventType) return res.status(404).json({ error: 'Event type not found' });
 
   const availability = await AvailabilityModel.findOne({ userId, eventTypeId: eventType._id }).lean();
@@ -108,7 +115,9 @@ eventTypesRouter.get('/:id/availability', requireAuth, asyncHandler(async (req, 
 
 eventTypesRouter.put('/:id/availability', requireAuth, asyncHandler(async (req, res) => {
   const userId = (req as AuthedRequest).userId;
-  const eventType = await EventTypeModel.findOne({ _id: req.params.id, userId }).select('_id').lean();
+  const idParsed = objectIdSchema.safeParse(req.params.id);
+  if (!idParsed.success) return res.status(400).json({ error: idParsed.error.flatten() });
+  const eventType = await EventTypeModel.findOne({ _id: idParsed.data, userId }).select('_id').lean();
   if (!eventType) return res.status(404).json({ error: 'Event type not found' });
 
   const schema = z.object({

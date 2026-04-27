@@ -28,7 +28,12 @@ authRouter.post('/register', asyncHandler(async (req, res) => {
 
   const passwordHash = await bcrypt.hash(password, 10);
   const user = await UserModel.create({ email, passwordHash, username, displayName, timezone });
-  await AvailabilityModel.create({ userId: user._id, timezone, weekly: [] });
+  try {
+    await AvailabilityModel.create({ userId: user._id, timezone, weekly: [] });
+  } catch (err) {
+    await UserModel.deleteOne({ _id: user._id });
+    throw err;
+  }
 
   const token = signAccessToken({ sub: String(user._id) });
   return res.json({ token });
