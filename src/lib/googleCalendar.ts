@@ -1,3 +1,4 @@
+/** Google Calendar OAuth + busy-time + event creation integration helpers. */
 import { google } from 'googleapis';
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID ?? '';

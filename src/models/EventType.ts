@@ -1,3 +1,4 @@
+/** Event type model defining host-owned public meeting templates. */
 import mongoose, { Schema, Types } from 'mongoose';
 
 export type EventTypeDoc = {

@@ -1,3 +1,4 @@
+/** Slot generation utility from weekly availability and booking constraints. */
 import { DateTime } from 'luxon';
 import type { WeeklyHours } from '../models/Availability';
 

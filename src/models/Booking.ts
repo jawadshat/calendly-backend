@@ -1,3 +1,4 @@
+/** Booking record model storing invitee details and confirmed time. */
 import mongoose, { Schema, Types } from 'mongoose';
 
 export type BookingDoc = {

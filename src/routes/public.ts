@@ -1,3 +1,4 @@
+/** Public booking routes used by invitees without authentication. */
 import { Router } from 'express';
 import { z } from 'zod';
 import { DateTime } from 'luxon';

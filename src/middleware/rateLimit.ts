@@ -1,3 +1,4 @@
+/** Lightweight in-memory rate limiter for per-IP throttling. */
 import type { NextFunction, Request, Response } from 'express';
 
 type Bucket = {

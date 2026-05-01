@@ -1,3 +1,4 @@
+/** Availability model for default or per-event scheduling rules. */
 import mongoose, { Schema, Types } from 'mongoose';
 
 export type WeeklyHours = {

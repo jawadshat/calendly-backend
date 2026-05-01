@@ -1,3 +1,4 @@
+/** JWT auth middleware that resolves current user from Bearer token. */
 import type { Request, Response, NextFunction } from 'express';
 import { verifyAccessToken } from '../lib/jwt';
 import { UserModel } from '../models/User';

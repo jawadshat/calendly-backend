@@ -1,3 +1,4 @@
+/** Backend bootstrap: config, middleware, routes, and Mongo connection. */
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';

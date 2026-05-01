@@ -1,3 +1,4 @@
+/** CRUD routes for a host's private event type configurations. */
 import { Router } from 'express';
 import { z } from 'zod';
 import { requireAuth, type AuthedRequest } from '../middleware/auth';

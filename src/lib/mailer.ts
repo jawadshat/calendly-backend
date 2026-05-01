@@ -1,3 +1,4 @@
+/** Booking email sender with dev fallback logging when provider is absent. */
 import { DateTime } from 'luxon';
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY;

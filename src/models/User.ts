@@ -1,3 +1,4 @@
+/** User model including account identity and Google Calendar token fields. */
 import mongoose, { Schema } from 'mongoose';
 
 export type UserDoc = {

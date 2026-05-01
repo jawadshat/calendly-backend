@@ -1,3 +1,4 @@
+/** Centralized error helpers for async routes and consistent API responses. */
 import type { NextFunction, Request, Response } from 'express';
 import mongoose from 'mongoose';
 import { ZodError } from 'zod';

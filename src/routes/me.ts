@@ -1,3 +1,4 @@
+/** Authenticated user routes: profile, availability, bookings, Google OAuth. */
 import { Router } from 'express';
 import { requireAuth, type AuthedRequest } from '../middleware/auth';
 import { UserModel } from '../models/User';
